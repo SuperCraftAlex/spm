@@ -65,14 +65,6 @@ fn install_package(name string, localpath string, mode int, update_if_dg bool, i
 		return
 	}
 
-	if pk.remote != "local" {
-		rt := http.get_text(pk.remote + "/pkg")
-		if rt != "" {
-			download_package(pk.remote)!
-			return
-		}
-	}
-
 	p := find_package_in_remotes(repos, name)!
 
 	pkf := get_pkg_from_text(http.get_text(p + "/pkg").split_into_lines())!

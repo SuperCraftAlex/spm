@@ -7,20 +7,20 @@ import time
 
 fn is_sudo() ! {
 	if !os.is_writable("/etc/") {
-		println(term.bright_red("Please run with sudo!"))
-		return error("no sudo")
+		return error(term.bright_red("Please run with sudo!"))
 	}
 }
 
-// todo: dependencies
-// TODO: split stuff across files
 // TODO: yes / no prompts
+// TODO: show when dependencies are installed with a package
+// TODO: spm publish request to spm repo server (make the server before tho)
 fn main() {
 	if (os.args.len == 2 && os.args[1] == "help") || os.args.len < 2 {
 		println("spm help			show this")
 		println("spm init			sets up spm")
 		println("spm l				show all installed packages")
 		println("spm i [package]		installs / updates the given package")
+		println("spm fi [package]	force installs / updates the given package")
 		println("spm r [package]		deletes the given package")
 		println("spm u				list all updatable packages")
 		println("spm u all			updates all updatable packages")
@@ -105,7 +105,7 @@ fn main() {
 				println(term.bright_yellow("Package cache contains ${broken.len} corrupted / broken packages!\nPlease run \"spm fix\"!"))
 			}
 		}
-		"i" {
+		"i", "fi" {
 			if !os.is_dir("/etc/spm") {
 				println(term.bright_red("Please run \"spm init\" first!"))
 				return
@@ -115,7 +115,7 @@ fn main() {
 				return
 			}
 
-			install_package(os.args[2], "/etc/spm/pkgs/", 0, false, fn () {
+			install_package(os.args[2], "/etc/spm/pkgs/", 0, op == "fi", fn () {
 				println(term.bright_red("Downgrading / reinstalling of packages is disabled!"))
 			}, fn (from int, to int) {
 				println(term.bright_green("Successfully updated ${os.args[2]} from v$from to v$to!"))
