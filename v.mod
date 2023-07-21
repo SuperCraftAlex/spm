@@ -1,7 +1,7 @@
 Module {
 	name: 'spm'
-	description: ''
-	version: '0.0.1'
+	description: 'simple package manager'
+	version: '2'
 	license: 'MIT'
 	dependencies: []
 }
