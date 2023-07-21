@@ -3,6 +3,7 @@ module main
 import os
 import term
 import net.http
+import time
 
 struct Package {
 	name string
@@ -12,6 +13,8 @@ struct Package {
 
 	remote string
 	remotfiles []string
+
+	desc string
 }
 
 fn get_pkg_from_text(txt []string) !&Package {
@@ -20,6 +23,7 @@ fn get_pkg_from_text(txt []string) !&Package {
 	mut files := []string {}
 	mut remote := "local"
 	mut rfiles := []string {}
+	mut desc := ""
 
 	for l in txt {
 		if l.trim_space().len == 0 {
@@ -35,6 +39,7 @@ fn get_pkg_from_text(txt []string) !&Package {
 			"file" { files << a[1] }
 			"remote" { remote = a[1] }
 			"rfile" { rfiles << a[1] }
+			"desc" { desc = a[1] }
 
 			else {}
 		}
@@ -51,6 +56,7 @@ fn get_pkg_from_text(txt []string) !&Package {
 		files: files
 		remote: remote
 		remotfiles: rfiles
+		desc: desc
 	}
 }
 
@@ -210,9 +216,8 @@ fn updatable_pkgs_dirlist() []&Package {
 	return upa
 }
 
-// TODO: find package by name in remotes
 fn main() {
-	if "help" in os.args {
+	if (os.args.len == 2 && os.args[1] == "help") || os.args.len < 2 {
 		println("spm help			show this")
 		println("spm init			sets up spm")
 		println("spm l				show all installed packages")
@@ -222,11 +227,8 @@ fn main() {
 		println("spm u all			updates all updatable packages")
 		println("spm fix				removes some corrupted packages")
 		println("spm o				list working repos added to the remote file")
-		return
-	}
-
-	if os.args.len < 2 {
-		println(term.bright_red("Invalid arguments!"))
+		println("spm f [name]		lists all packages containing [name]")
+		println("spm d [package]		shows the description of a package")
 		return
 	}
 
@@ -236,21 +238,20 @@ fn main() {
 	}
 
 	op := os.args[1]
-
 	match op {
 		"init" {
 			if !os.is_dir("/etc/spm") {
 				os.mkdir("/etc/spm")!
 				os.mkdir("/etc/spm/pkgs")!
 				os.mkdir("/etc/spm/pkgs/spm")!
-				os.write_file("/etc/spm/pkgs/spm/pkg", "name<spm\nversion<1\nremote<http://207.180.202.42/files/spm-packages/spm\nfile</bin/spm\nfile</etc/spm\nrfile<install.sh\nrfile<spm")!
+				os.write_file("/etc/spm/pkgs/spm/pkg", "name<spm\nversion<3\nremote<http://207.180.202.42/files/spm-packages/spm\nfile</bin/spm\nfile</etc/spm\nrfile<install.sh\nrfile<spm")!
 				os.write_file("/etc/spm/pkgs/pkcache", "spm=spm")!	// left: name in pkg		right: name in fs
 				os.write_file("/etc/spm/repos", "http://207.180.202.42/files/spm-packages/\n")!
 				println(term.bright_green("Done!"))
 				println("It is recommended to run \"spm u all\" to update spm itself!")
 				return
 			}
-			println(term.bright_yellow("Already installed!"))
+			println(term.bright_yellow("Already initialised!"))
 		}
 		"o" {
 			if !os.is_dir("/etc/spm") {
@@ -265,12 +266,25 @@ fn main() {
 			a := os.read_lines("/etc/spm/repos")!
 			mut working := 0
 			for remote in a {
+				mut stow := time.new_stopwatch(time.StopWatchOptions{auto_start: true})
 				if http.get_text(remote + "/pkcache") != "" {
-					println("- $remote: ${term.bright_green("working")}")
+					ping := stow.elapsed()
+					mut pingc := ping.str()
+					if ping.milliseconds() < 40 {
+						pingc = term.bright_green(pingc)
+					}
+					else if ping.milliseconds() < 80 {
+						pingc = term.bright_yellow(pingc)
+					}
+					else {
+						pingc = term.bright_red(pingc)
+					}
+					println("- $remote: ${term.bright_green("working")}: ping: $pingc")
 					working ++
 				} else {
 					println("- $remote: ${term.bright_red("broken")}")
 				}
+				stow.stop()
 			}
 			if working == 0 {
 				println(term.bright_red("No working repositories!"))
@@ -452,6 +466,10 @@ fn main() {
 				println(term.bright_red("Please run \"spm init\" first!"))
 				return
 			}
+			if os.args.len != 2 {
+				println(term.bright_red("Invalid arguments!"))
+				return
+			}
 			cache := os.read_lines("/etc/spm/pkgs/pkcache")!
 			mut newcache := []string {}
 			for cp in cache {
@@ -473,6 +491,69 @@ fn main() {
 			os.rmdir_all("/etc/spm")!
 			os.rm("/bin/spm")!
 			println(term.bright_yellow("Uninstalled spm!"))
+		}
+		"f" {
+			if !os.is_dir("/etc/spm") {
+				println(term.bright_red("Please run \"spm init\" first!"))
+				return
+			}
+			if os.args.len != 3 {
+				println(term.bright_red("Invalid arguments!"))
+				return
+			}
+
+			mut ft := []string {}
+			for remote in os.read_lines("/etc/spm/repos")! {
+				a := http.get_text("$remote/pkcache")
+				if a == "" {
+					continue
+				}
+				for ci in a.split("\n") {
+					if ci.len == 0 {
+						continue
+					}
+					b := ci.split("=")
+					if b[0].contains(os.args[2]) {
+						ft << b[0]
+					}
+				}
+			}
+
+			if ft.len == 0 {
+				println(term.bright_red("No package containing \"${os.args[2]}\" found!"))
+				return
+			}
+			for f in ft {
+				println("- $f")
+			}
+		}
+		"d" {
+			if !os.is_dir("/etc/spm") {
+				println(term.bright_red("Please run \"spm init\" first!"))
+				return
+			}
+			if os.args.len != 3 {
+				println(term.bright_red("Invalid arguments!"))
+				return
+			}
+			pkr := find_package_in_remotes(os.read_lines("/etc/spm/repos")!, os.args[2]) or {
+				println(term.bright_red("Package not found!"))
+				return
+			}
+			t := http.get_text(pkr + "/pkg")
+			if t == "" {
+				println(term.bright_red("Remote package corrupted!"))
+				return
+			}
+			pk := get_pkg_from_text(t.split_into_lines()) or {
+				println(term.bright_red("Remote package corrupted!"))
+				return
+			}
+			if pk.desc == "" {
+				println(term.bright_yellow("Package has no description!"))
+				return
+			}
+			println(pk.desc)
 		}
 		else {
 			println(term.bright_red("Invalid arguments!"))
