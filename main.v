@@ -181,7 +181,9 @@ fn main() {
 					download_package(pkg.remote) or {
 						print(term.red("Error updating package ${pkg.name}: "))
 						println(err)
+						continue
 					}
+					println(term.bright_green("Updated ${pk.name}!"))
 				}
 				if a.len == 0 {
 					println(term.bright_green("All packages are up-to-date!"))
