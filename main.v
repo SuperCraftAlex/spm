@@ -7,6 +7,7 @@ import time
 
 fn is_sudo() ! {
 	if !os.is_writable("/etc/") {
+		println(term.bright_red("Please run with sudo!"))
 		return error(term.bright_red("Please run with sudo!"))
 	}
 }
@@ -14,6 +15,7 @@ fn is_sudo() ! {
 // TODO: yes / no prompts
 // TODO: show when dependencies are installed with a package
 // TODO: spm publish request to spm repo server (make the server before tho)
+// TODO: backup files before updating
 fn main() {
 	if (os.args.len == 2 && os.args[1] == "help") || os.args.len < 2 {
 		println("spm help			show this")
@@ -114,6 +116,8 @@ fn main() {
 				println(term.bright_red("Invalid arguments!"))
 				return
 			}
+
+			is_sudo() or { return }
 
 			install_package(os.args[2], "/etc/spm/pkgs/", 0, op == "fi", fn () {
 				println(term.bright_red("Downgrading / reinstalling of packages is disabled!"))
