@@ -21,20 +21,28 @@ fn main() {
 		println("spm help			show this")
 		println("spm init			sets up spm")
 		println("spm l				show all installed packages")
-		println("spm i [package]		installs / updates the given package")
-		println("spm fi [package]	force installs / updates the given package")
-		println("spm r [package]		deletes the given package")
+		println("spm i [package]			installs / updates the given package")
+		println("spm fi [package]		force installs / updates the given package")
+		println("spm r [package]			deletes the given package")
 		println("spm u				list all updatable packages")
 		println("spm u all			updates all updatable packages")
 		println("spm fix				removes some corrupted packages")
 		println("spm o				list working repos added to the remote file")
-		println("spm f [name]		lists all packages containing [name]")
-		println("spm d [package]		shows the description of a package")
+		println("spm f [name]			lists all packages containing [name]")
+		println("spm d [package]			shows the description of a package")
 		return
 	}
 
 	op := os.args[1]
 	match op {
+		"list" {
+			if os.args[2] == "-i" {
+				_, working := m_list_packages("/etc/spm/pkgs/")!
+				for _ in working {
+					println("THIS IS JUST IMPLEMENTED FOR NEOFETCH SUPPORT WITHOUT CHANGING NEOFETCH CODE! (\"tricks\" neofetch into spm beeing swift-package-manager)")
+				}
+			}
+		}
 		"init" {
 			is_sudo() or { return }
 			if !os.is_dir("/etc/spm") {
@@ -99,9 +107,9 @@ fn main() {
 				println(term.bright_red("Invalid arguments!"))
 				return
 			}
-			broken, working := list_packages("/etc/spm/pkgs/")!
+			broken, working := m_list_packages("/etc/spm/pkgs/")!
 			for pk in working {
-				println("- ${pk.name}: v${pk.version}")
+				println("- ${pk.name}: " + term.gray("v${pk.version}"))
 			}
 			if broken.len > 0 {
 				println(term.bright_yellow("Package cache contains ${broken.len} corrupted / broken packages!\nPlease run \"spm fix\"!"))
@@ -117,19 +125,11 @@ fn main() {
 				return
 			}
 
-			is_sudo() or { return }
-
-			install_package(os.args[2], "/etc/spm/pkgs/", 0, op == "fi", fn () {
-				println(term.bright_red("Downgrading / reinstalling of packages is disabled!"))
-			}, fn (from int, to int) {
-				println(term.bright_green("Successfully updated ${os.args[2]} from v$from to v$to!"))
-			}, fn (version int) {
-				println(term.bright_green("Successfully installed ${os.args[2]} version $version!"))
-			}, fn (lib string) {
-				println(term.bright_red("Could not resolve library $lib!"))
-			}, os.read_lines("/etc/spm/repos")!) or {
-				println(err)
-				return
+			for x in os.args[2].split(",") {
+				f_install(x, op == "fi") or {
+					println(err)
+					return
+				}
 			}
 		}
 		"r" {
@@ -141,22 +141,12 @@ fn main() {
 				println(term.bright_red("Invalid arguments!"))
 				return
 			}
-			if os.args[2] == "spm" {
-				println(term.bright_red("Dont remove spm via \"spm r spm\"!\nUse \"spm self_uninstall\" instead!\n(Removing spm is not recommended!)"))
-				return
-			}
-			is_sudo() or { return }
 
-			path := get_pkg_path_from_cache(os.read_lines("/etc/spm/pkgs/pkcache")!, os.args[2]) or {
-				println(term.bright_red("Package not found!"))
-				return
+			for pk in os.args[2].split(",").map(fn (x string) string {return x.trim_space()}) {
+				f_removepkg(pk) or {
+					println(err)
+				}
 			}
-			remove_pkg(path) or {
-				print(term.bright_red("Error removing package: "))
-				println(err)
-			}
-
-			println(term.bright_yellow("Package removed!"))
 		}
 		"u" {
 			if !os.is_dir("/etc/spm") {
@@ -164,36 +154,17 @@ fn main() {
 				return
 			}
 			if os.args.len == 2 {
-				a := updatable_pkgs_dirlist()
-				for pkg in a {
-					pk := get_pkg_from_path("/etc/spm/pkgs/${pkg.name}") or { continue }
-					println("- " + pk.name)
-				}
-				if a.len == 0 {
-					println(term.bright_green("All packages are up to date!"))
-				}
-				else {
-					println(term.bright_yellow("${a.len} package(s) are updatable!"))
-				}
+				f_list_updateable()
 			}
-			else if os.args.len == 3 && os.args[2] == "all" {
-				is_sudo() or { return }
-				a := updatable_pkgs_dirlist()
-				for pkg in a {
-					pk := get_pkg_from_path("/etc/spm/pkgs/${pkg.name}") or { continue }
-					println("Updating " + pk.name)
-					download_package(pkg.remote) or {
-						print(term.red("Error updating package ${pkg.name}: "))
-						println(err)
-						continue
-					}
-					println(term.bright_green("Updated ${pk.name}!"))
+			else if os.args.len == 3 {
+				if os.args[2] == "all" {
+					f_update(b_updateable_pkgs_list("/etc/spm/pkgs/", os.read_lines("/etc/spm/repos")!).tostring())!
 				}
-				if a.len == 0 {
-					println(term.bright_green("All packages are up-to-date!"))
+				else if os.args[2] == "fall" {
+					f_update(m_list_packages_s("/etc/spm/pkgs/")!)!
 				}
 				else {
-					println(term.bright_green("${a.len} package(s) have been updated!"))
+					f_update(os.args[2].split(",").map(fn (x string) string {return x.trim_space()}))!
 				}
 			}
 			else {
@@ -210,29 +181,15 @@ fn main() {
 				println(term.bright_red("Invalid arguments!"))
 				return
 			}
-			is_sudo() or { return }
-			cache := os.read_lines("/etc/spm/pkgs/pkcache")!
-			mut newcache := []string {}
-			for cp in cache {
-				a := cp.split("=")
-				get_pkg_from_path("/etc/spm/pkgs/${a[1]}") or {
-					println(term.bright_yellow("Removed corrupted package ${a[0]}"))
-					continue
-				}
-				newcache << cp
-			}
-			os.write_file("/etc/spm/pkgs/pkcache", newcache.join("\n"))!
-			println(term.bright_green("Done!"))
+
+			f_fix()!
 		}
 		"self_uninstall" {
 			if os.args.len != 3 || os.args[2] != "yes" {
-				println(term.bright_red("To remove spm completely, run \"spm self_uninstall yes\"!"))
+				println(term.bright_red("To remove spm completely, run \"") + term.yellow("spm self_uninstall yes") + term.bright_red("\"!"))
 				return
 			}
-			is_sudo() or { return }
-			os.rmdir_all("/etc/spm")!
-			os.rm("/bin/spm")!
-			println(term.bright_yellow("Uninstalled spm!"))
+			f_self_uninstall()!
 		}
 		"f" {
 			if !os.is_dir("/etc/spm") {
@@ -244,30 +201,7 @@ fn main() {
 				return
 			}
 
-			mut ft := []string {}
-			for remote in os.read_lines("/etc/spm/repos")! {
-				a := http.get_text("$remote/pkcache")
-				if a == "" {
-					continue
-				}
-				for ci in a.split("\n") {
-					if ci.len == 0 {
-						continue
-					}
-					b := ci.split("=")
-					if b[0].contains(os.args[2]) {
-						ft << b[0]
-					}
-				}
-			}
-
-			if ft.len == 0 {
-				println(term.bright_red("No package containing \"${os.args[2]}\" found!"))
-				return
-			}
-			for f in ft {
-				println("- $f")
-			}
+			f_find(os.args[2])!
 		}
 		"d" {
 			if !os.is_dir("/etc/spm") {
@@ -278,24 +212,7 @@ fn main() {
 				println(term.bright_red("Invalid arguments!"))
 				return
 			}
-			pkr := find_package_in_remotes(os.read_lines("/etc/spm/repos")!, os.args[2]) or {
-				println(term.bright_red("Package not found!"))
-				return
-			}
-			t := http.get_text(pkr + "/pkg")
-			if t == "" {
-				println(term.bright_red("Remote package corrupted!"))
-				return
-			}
-			pk := get_pkg_from_text(t.split_into_lines()) or {
-				println(term.bright_red("Remote package corrupted!"))
-				return
-			}
-			if pk.desc == "" {
-				println(term.bright_yellow("Package has no description!"))
-				return
-			}
-			println(pk.desc)
+			f_get_description(os.args[2])!
 		}
 		else {
 			println(term.bright_red("Invalid arguments!"))

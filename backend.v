@@ -20,7 +20,7 @@ struct Package {
 	installed bool		// WARNING: not set by most functions
 }
 
-fn get_pkg_from_text(txt []string) !&Package {
+fn b_get_pkg_from_text(txt []string) !&Package {
 	mut name := ""
 	mut version := ""
 	mut files := []string {}
@@ -66,15 +66,15 @@ fn get_pkg_from_text(txt []string) !&Package {
 	}
 }
 
-fn get_pkg_from_path(path string) !&Package {
+fn b_get_pkg_from_path(path string) !&Package {
 	if !os.is_readable(path + "/pkg") {
 		return error(term.bright_red("Not readable!"))
 	}
 
-	return get_pkg_from_text(os.read_lines(path + "/pkg")!)
+	return b_get_pkg_from_text(os.read_lines(path + "/pkg")!)
 }
 
-fn get_pkg_path_from_cache(cache []string, pkg string) !string {
+fn b_get_pkg_path_from_cache(cache []string, pkg string) !string {
 	for cp in cache {
 		a := cp.split("=")
 		if a[0] == pkg {
@@ -84,8 +84,8 @@ fn get_pkg_path_from_cache(cache []string, pkg string) !string {
 	return error("Package not found!")
 }
 
-// find_package_in_remotes returns the url of the path to the package on any remote OR and error if it doesnt exist
-fn find_package_in_remotes(remotes []string, pkg string) !string {
+// b_find_package_in_remotes returns the url of the path to the package on any remote OR an error if it doesnt exist
+fn b_find_package_in_remotes(remotes []string, pkg string) !string {
 	for remote in remotes {
 		a := http.get_text("$remote/pkcache")
 		if a == "" {
@@ -108,22 +108,22 @@ fn find_package_in_remotes(remotes []string, pkg string) !string {
 	return error(term.bright_red("Package not found in repos!"))
 }
 
-fn remove_pkg(dirname string) ! {
-	if os.is_dir("/etc/spm/pkgs/$dirname") {
-		pk := get_pkg_from_path("/etc/spm/pkgs/$dirname") or {
-			os.rmdir_all("/etc/spm/pkgs/$dirname") or {
+fn b_remove_pkg(dirname string, path string) ! {
+	if os.is_dir("$path/$dirname") {
+		pk := b_get_pkg_from_path("$path/$dirname") or {
+			os.rmdir_all("$path/$dirname") or {
 				return error(term.bright_red("Cannot delete package directory!"))
 			}
 			return
 		}
-		if os.is_file("/etc/spm/pkgs/$dirname/uninstall.sh") {
-			os.chmod("/etc/spm/pkgs/$dirname/uninstall.sh", 777) or {
+		if os.is_file("$path/$dirname/uninstall.sh") {
+			os.chmod("$path/$dirname/uninstall.sh", 777) or {
 				return error(term.bright_red("Cannot make uninstall script executable!"))
 			}
-			os.chdir("/etc/spm/pkgs/$dirname/")!
-			os.execute("bash /etc/spm/pkgs/$dirname/uninstall.sh")
+			os.chdir("$path/$dirname/")!
+			os.execute("bash $path/$dirname/uninstall.sh")
 		}
-		os.rmdir_all("/etc/spm/pkgs/$dirname") or {
+		os.rmdir_all("$path/$dirname") or {
 			return error(term.bright_red("Cannot delete package directory!"))
 		}
 		if dirname != "spm" {
@@ -138,7 +138,7 @@ fn remove_pkg(dirname string) ! {
 		}
 	}
 
-	cache := os.read_lines("/etc/spm/pkgs/pkcache") or { return }
+	cache := os.read_lines("$path/pkcache") or { return }
 	mut newcache := []string {}
 	for cp in cache {
 		a := cp.split("=")
@@ -146,62 +146,66 @@ fn remove_pkg(dirname string) ! {
 			newcache << cp
 		}
 	}
-	os.write_file("/etc/spm/pkgs/pkcache", newcache.join("\n")) or {}
+	os.write_file("$path/pkcache", newcache.join("\n")) or {}
 }
 
-fn download_package(remote string) !&Package {
+fn b_download_package(path string, remote string) !&Package {
 	mut dirname := remote.all_after_last("/")
 	if remote.ends_with("/") {
 		dirname = remote#[..-1].all_after_last("/")
 	}
-	remove_pkg(dirname)!
+	b_remove_pkg(dirname, path)!
 	pkf := http.get_text(remote + "/pkg")
-	pk := get_pkg_from_text(pkf.split_into_lines()) or {
+	pk := b_get_pkg_from_text(pkf.split_into_lines()) or {
 		return error(term.bright_red("Remote url not a package!"))
 	}
-	os.mkdir("/etc/spm/pkgs/$dirname/") or {
+	os.mkdir(path + "/$dirname/") or {
 		return error(term.bright_red("Error creating dir for pkg!"))
 	}
-	os.write_file("/etc/spm/pkgs/$dirname/pkg", pkf) or {
+	os.write_file(path + "/$dirname/pkg", pkf) or {
 		return error(term.bright_red("No permissions to install package!"))
 	}
 	for rfile in pk.remotfiles {
-		os.write_file("/etc/spm/pkgs/$dirname/$rfile", http.get_text(remote + "/$rfile")) or {}
+		os.write_file(path + "/$dirname/$rfile", http.get_text(remote + "/$rfile")) or {}
 	}
 
-	mut cache := os.read_lines("/etc/spm/pkgs/pkcache") or {
+	mut cache := os.read_lines(path + "/pkcache") or {
 		return error(term.bright_red("Package cache broken!"))
 	}
 	cache << pk.name + "=" + dirname
-	os.write_file("/etc/spm/pkgs/pkcache", cache.join("\n")) or {
+	os.write_file(path + "/pkcache", cache.join("\n")) or {
 		return error(term.bright_red("No permissions to install package!"))
 	}
 
-	if os.is_file("/etc/spm/pkgs/$dirname/install.sh") {
-		os.chmod("/etc/spm/pkgs/$dirname/install.sh", 777) or {
+	if os.is_file(path + "/$dirname/install.sh") {
+		os.chmod(path + "/$dirname/install.sh", 777) or {
 			return error(term.bright_red("Cannot make install script executable!"))
 		}
-		os.chdir("/etc/spm/pkgs/$dirname/")!
-		os.execute("bash /etc/spm/pkgs/$dirname/install.sh")
+		os.chdir(path + "/$dirname/")!
+		os.execute("bash $path/$dirname/install.sh")
 	}
 
 	return pk
 }
 
-fn updatable_pkgs_dirlist() []&Package {
+fn (arr []&Package) tostring() []string {
+	return arr.map(fn (pk &Package) string {return pk.name})
+}
+
+fn b_updateable_pkgs_list(path string, repos []string) []&Package {
 	mut upa := []&Package {}
 
-	for pkgf in os.read_lines("/etc/spm/pkgs/pkcache") or { return upa } {
+	for pkgf in os.read_lines(path+"/pkcache") or { return upa } {
 		pkg := pkgf.all_after_first("=").trim_space()
-		if !os.is_file("/etc/spm/pkgs/$pkg/pkg") {
+		if !os.is_file(path + "/$pkg/pkg") {
 			continue
 		}
-		pk := get_pkg_from_path("/etc/spm/pkgs/$pkg") or { continue }
+		pk := b_get_pkg_from_path(path+"/$pkg") or { continue }
 
 		if pk.remote != "local" {
 			remotetxt := http.get_text(pk.remote + "/pkg")
 			if remotetxt != "" {
-				rpk := get_pkg_from_text(remotetxt.split_into_lines()) or { continue }
+				rpk := b_get_pkg_from_text(remotetxt.split_into_lines()) or { continue }
 				if rpk.version > pk.version {
 					upa << &Package {
 						name: pkgf.before("=").trim_space()		// not real name! (is directory name)
@@ -211,10 +215,10 @@ fn updatable_pkgs_dirlist() []&Package {
 				continue
 			}
 		}
-		pa := find_package_in_remotes(os.read_lines("/etc/spm/repos") or { return upa } , pkg) or { continue }
+		pa := b_find_package_in_remotes(repos, pkg) or { continue }
 		remotetxt := http.get_text(pa + "/pkg")
 		if remotetxt != "" {
-			rpk := get_pkg_from_text(remotetxt.split_into_lines()) or { continue }
+			rpk := b_get_pkg_from_text(remotetxt.split_into_lines()) or { continue }
 			if rpk.version > pk.version {
 				upa << &Package {
 					name: pkgf.before("=").trim_space()			// not real name! (is directory name)
