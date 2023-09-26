@@ -1,0 +1,1 @@
+v . -skip-unused -cc gcc -gc none -prod
