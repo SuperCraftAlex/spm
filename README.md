@@ -2,6 +2,7 @@
 simple package manager
 
 Download the latest binary from the releases tab.
+
 Once installed, run:
 `spm init`
 and then:
