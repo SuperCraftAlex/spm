@@ -10,7 +10,7 @@ fn m_list_packages_s(path string) ![]string {
 	})
 }
 
-// m_list_packages lists all packages in the specified
+// m_list_packages lists all packages in the specified path (local) (has to contain pkcache file)
 fn m_list_packages(path string) !([]string, []&Package) {
 	mut broken_pkgs := []string{}
 	mut working_pkgs := []&Package{}
@@ -56,7 +56,7 @@ fn m_install_package(name string, localpath string, mode int, update_if_dg bool,
 		}
 
 		p := b_find_package_in_remotes(repos, name)!
-		npk := b_download_package(localpath, p)!
+		npk := b_download_package(localpath, p, name)!
 
 		mut errl := 0
 		for dep in npk.dependencies {
@@ -85,7 +85,7 @@ fn m_install_package(name string, localpath string, mode int, update_if_dg bool,
 		return
 	}
 
-	npk := b_download_package(localpath, p)!
+	npk := b_download_package(localpath, p, name)!
 
 	mut errl := 0
 	for dep in npk.dependencies {

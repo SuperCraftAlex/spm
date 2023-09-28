@@ -10,8 +10,8 @@ struct Package {
 
 	files []string
 
-	remote     string
-	remotfiles []string
+	remote      string
+	remotefiles []string
 
 	desc string
 
@@ -34,6 +34,7 @@ fn cmp_u8a_am_nt(a &u8, b &u8, amount int) bool {
 	}
 }
 
+// TODO: fix empty lines breaking this
 fn b_get_pkg_from_text(txtIn string) !&Package {
 	txt := txtIn.clone()
 	mut name := ''
@@ -115,7 +116,7 @@ fn b_get_pkg_from_text(txtIn string) !&Package {
 		version: v
 		files: files
 		remote: remote
-		remotfiles: rfiles
+		remotefiles: rfiles
 		desc: desc
 		dependencies: dep
 	}
@@ -176,7 +177,11 @@ fn b_remove_pkg(dirname string, path string) ! {
 				return error(term.bright_red('Cannot make uninstall script executable!'))
 			}
 			os.chdir('${path}/${dirname}/')!
-			os.execute('bash ${path}/${dirname}/uninstall.sh')
+			r := os.execute('bash ${path}/${dirname}/uninstall.sh')
+			println(r.output)
+			if r.exit_code != 0 {
+				println(term.bright_red('Uninstall script failed!'))
+			}
 		}
 		os.rmdir_all('${path}/${dirname}') or {
 			return error(term.bright_red('Cannot delete package directory!'))
@@ -204,38 +209,43 @@ fn b_remove_pkg(dirname string, path string) ! {
 	os.write_file('${path}/pkcache', newcache.join('\n')) or {}
 }
 
-fn b_download_package(path string, remote string) !&Package {
-	mut dirname := remote.all_after_last('/')
-	if remote.ends_with('/') {
-		dirname = remote#[..-1].all_after_last('/')
-	}
-	b_remove_pkg(dirname, path)!
+fn b_download_package(path string, remote string, name string) !&Package {
+	b_remove_pkg(b_get_pkg_path_from_cache(os.read_lines(path + '/pkcache')!, name) or {
+		unsafe {
+			goto cont
+		}
+		''
+	}, path)!
+	cont:
 	pkf := http.get_text(remote + '/pkg')
 	pk := b_get_pkg_from_text(pkf) or { return error(term.bright_red('Remote url not a package!')) }
-	os.mkdir(path + '/${dirname}/') or {
-		return error(term.bright_red('Error creating dir for pkg!'))
+	os.mkdir(path + '/${name}/') or {
+		return error(term.bright_red('Error creating directory for package!'))
 	}
-	os.write_file(path + '/${dirname}/pkg', pkf) or {
+	os.write_file(path + '/${name}/pkg', pkf) or {
 		return error(term.bright_red('No permissions to install package!'))
 	}
-	for rfile in pk.remotfiles {
-		os.write_file(path + '/${dirname}/${rfile}', http.get_text(remote + '/${rfile}')) or {}
+	for rfile in pk.remotefiles {
+		os.write_file(path + '/${name}/${rfile}', http.get_text(remote + '/${rfile}')) or {}
 	}
 
 	mut cache := os.read_lines(path + '/pkcache') or {
 		return error(term.bright_red('Package cache broken!'))
 	}
-	cache << pk.name + '=' + dirname
+	cache << pk.name + '=' + name
 	os.write_file(path + '/pkcache', cache.join('\n')) or {
 		return error(term.bright_red('No permissions to install package!'))
 	}
-
-	if os.is_file(path + '/${dirname}/install.sh') {
-		os.chmod(path + '/${dirname}/install.sh', 777) or {
+	if os.is_file(path + '/${name}/install.sh') {
+		os.chmod(path + '/${name}/install.sh', 777) or {
 			return error(term.bright_red('Cannot make install script executable!'))
 		}
-		os.chdir(path + '/${dirname}/')!
-		os.execute('bash ${path}/${dirname}/install.sh')
+		os.chdir(path + '/${name}/')!
+		r := os.execute('bash ${path}/${name}/install.sh')
+		println(r.output)
+		if r.exit_code != 0 {
+			return error(term.bright_red('Install script failed!'))
+		}
 	}
 
 	return pk
